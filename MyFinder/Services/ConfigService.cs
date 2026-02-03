@@ -18,10 +18,20 @@ public class ConfigService
     public bool DetectVehicles { get; set; } = true;
     public bool DetectAnimals { get; set; } = true;
     public string WhisperModel { get; set; } = "Base";
+    
+    // Window Settings
+    public double WindowWidth { get; set; } = 960;
+    public double WindowHeight { get; set; } = 540;
 
     public ConfigService(string appDataPath)
     {
         _storagePath = Path.Combine(appDataPath, SettingsFileName);
+    }
+
+    // Required for deserialization
+    public ConfigService() 
+    {
+        _storagePath = string.Empty; // Will be unused on deserialized instance, as we copy properties
     }
 
     public async Task LoadAsync()
@@ -43,6 +53,12 @@ public class ConfigService
                 
                 if (!string.IsNullOrEmpty(settings.WhisperModel))
                     WhisperModel = settings.WhisperModel;
+
+                if (settings.WindowWidth > 0 && settings.WindowHeight > 0)
+                {
+                    WindowWidth = settings.WindowWidth;
+                    WindowHeight = settings.WindowHeight;
+                }
             }
         }
         catch (JsonException)

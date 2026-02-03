@@ -9,6 +9,8 @@ public partial class SettingsView : UserControl
     private Services.ConfigService? _config;
     private Services.MetadataStore? _store;
     private Services.TimestampService? _timestampService;
+    private Services.FaceRecognitionService? _faceService;
+    private Services.VoiceFingerprintService? _voiceService;
 
     public event EventHandler? BackRequested;
 
@@ -19,9 +21,16 @@ public partial class SettingsView : UserControl
 
     public void Initialize(Services.ConfigService config, Services.MetadataStore? store, Services.TimestampService timestampService)
     {
+        Initialize(config, store, timestampService, null, null);
+    }
+    
+    public void Initialize(Services.ConfigService config, Services.MetadataStore? store, Services.TimestampService timestampService, Services.FaceRecognitionService? faceService, Services.VoiceFingerprintService? voiceService)
+    {
         _config = config;
         _store = store;
         _timestampService = timestampService;
+        _faceService = faceService;
+        _voiceService = voiceService;
 
         // Load values
         if (_config != null)
@@ -47,29 +56,81 @@ public partial class SettingsView : UserControl
         }
     }
     
+    private void ShowDebug(string text)
+    {
+        TxtDebugOutput.Text = text;
+        TxtDebugOutput.Visibility = Visibility.Visible;
+    }
+
     private async void BtnDebugTime_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Filter = "Video Files|*.mp4;*.mov;*.avi;*.mkv",
-            Title = "Select Video to Test Timestamp Extraction"
-        };
+        string? path = SelectFile("Video Files|*.mp4;*.mov;*.avi;*.mkv");
+        if (path == null) return;
+        
+        BtnDebugTime.Content = "Testing...";
+        BtnDebugTime.IsEnabled = false;
+        
+        string result = await _timestampService!.TestExtractionAsync(path);
+        
+        BtnDebugTime.Content = "Debug Timestamp";
+        BtnDebugTime.IsEnabled = true;
+        
+        ShowDebug(result);
+    }
 
-        if (dialog.ShowDialog() == true)
-        {
-            string path = dialog.FileName;
-            BtnDebugTime.Content = "Running Test...";
-            BtnDebugTime.IsEnabled = false;
-            
-            string result = await _timestampService!.TestExtractionAsync(path);
-            
-            BtnDebugTime.Content = "Debug Timestamp Extraction (Select File)";
-            BtnDebugTime.IsEnabled = true;
-            
-            // Show result with ScrollViewer in MessageBox if possible, but MessageBox can be small.
-            // Let's just output to MessageBox, user can screenshot it.
-            MessageBox.Show(result, "Timestamp Extraction Debug Log");
-        }
+    private async void BtnDebugFace_Click(object sender, RoutedEventArgs e)
+    {
+         if (_faceService == null) { ShowDebug("Face Service not available."); return; }
+         string? path = SelectFile("Video Files|*.mp4;*.mov;*.avi;*.mkv");
+         if (path == null) return;
+
+         BtnDebugFace.Content = "Testing...";
+         BtnDebugFace.IsEnabled = false;
+         
+         string result = await _faceService.TestFaceDetectionAsync(path);
+         
+         BtnDebugFace.Content = "Debug Face";
+         BtnDebugFace.IsEnabled = true;
+         
+         ShowDebug(result);
+    }
+
+    private async void BtnDebugVoice_Click(object sender, RoutedEventArgs e)
+    {
+         if (_voiceService == null) { ShowDebug("Voice Service not available."); return; }
+         string? path = SelectFile("Video Files|*.mp4;*.mov;*.avi;*.mkv;*.mp3;*.wav");
+         if (path == null) return;
+
+         BtnDebugVoice.Content = "Testing...";
+         BtnDebugVoice.IsEnabled = false;
+         
+         string result = "Extracting Voice Embedding...";
+         ShowDebug(result);
+         
+         try 
+         {
+             var embedding = await _voiceService.GetVoiceEmbeddingAsync(path);
+             result = $"Voice Debug for: {System.IO.Path.GetFileName(path)}\n";
+             result += $"Embedding Found: {(embedding != null && embedding.Length > 0 ? "YES" : "NO")}\n";
+             if (embedding != null) result += $"Length: {embedding.Length}\n";
+             if (embedding != null && embedding.Length > 0) result += $"First 5: {string.Join(", ", embedding.Take(5))}";
+         }
+         catch (Exception ex)
+         {
+             result = $"Error: {ex.Message}";
+         }
+         
+         BtnDebugVoice.Content = "Debug Voice";
+         BtnDebugVoice.IsEnabled = true;
+         
+         ShowDebug(result);
+    }
+
+    private string? SelectFile(string filter)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = filter };
+        if (dialog.ShowDialog() == true) return dialog.FileName;
+        return null;
     }
 
     private void BtnBack_Click(object sender, RoutedEventArgs e)

@@ -22,6 +22,7 @@ public partial class MainWindow : Window
     // AI Services (Shared to avoid reloading models)
     private MyFinder.Services.AudioTranscriber? _transcriber;
     private MyFinder.Services.VoiceFingerprintService? _voiceService;
+    private MyFinder.Services.FaceRecognitionService? _faceService;
     private MyFinder.Services.TimestampService? _timestampService;
 
     private bool _isListView = false;
@@ -77,6 +78,7 @@ public partial class MainWindow : Window
                 
             _transcriber = new MyFinder.Services.AudioTranscriber(System.IO.Path.Combine(commonData, $"ggml-{modelType.ToString().ToLower()}.bin"), modelType);
             _voiceService = new MyFinder.Services.VoiceFingerprintService(System.IO.Path.Combine(commonData, "voxceleb.onnx"));
+            _faceService = new MyFinder.Services.FaceRecognitionService(System.IO.Path.Combine(commonData, "arcface.onnx"));
             _timestampService = new MyFinder.Services.TimestampService(commonData); // Init Service
             
             // Wire up Transcript Back Button
@@ -99,8 +101,24 @@ public partial class MainWindow : Window
             {
                await _transcriber.InitializeAsync();
                await _voiceService.InitializeAsync();
-               await _timestampService.InitializeAsync();
+                await _faceService.InitializeAsync();
+                await _timestampService.InitializeAsync();
             });
+
+            // Apply Saved Window Size
+            if (_config.WindowWidth > 0 && _config.WindowHeight > 0)
+            {
+                this.Width = _config.WindowWidth;
+                this.Height = _config.WindowHeight;
+            }
+        };
+
+        // Save Settings on Close
+        this.Closing += async (s, e) => 
+        {
+            _config.WindowWidth = this.Width;
+            _config.WindowHeight = this.Height;
+            await _config.SaveAsync();
         };
     }
 
@@ -173,7 +191,7 @@ public partial class MainWindow : Window
         var firstStore = DriveList.FirstOrDefault()?.Store;
         
         // Initialize view
-        SettingsScreen.Initialize(_config, firstStore, _timestampService!);
+        SettingsScreen.Initialize(_config, firstStore, _timestampService!, _faceService, _voiceService);
 
         // Switch View
         MainGalleryView.Visibility = Visibility.Collapsed;
@@ -351,11 +369,10 @@ public partial class MainWindow : Window
 
     private async void BtnFace_Click(object sender, RoutedEventArgs e)
     {
-        string recPath = GetModelPath("arcface.onnx");
-        var faceService = new MyFinder.Services.FaceRecognitionService(recPath);
+        if (_faceService == null) return;
         
         TxtStatus.Text = "Initializing Face Service...";
-        await faceService.InitializeAsync();
+        await _faceService.InitializeAsync();
         
         // Prioritize Selected File
         var targetFiles = new List<Models.MediaFile>();
@@ -375,7 +392,7 @@ public partial class MainWindow : Window
                  Dispatcher.Invoke(() => TxtStatus.Text = $"Finding faces in {file.FileName}...");
                  try
                  {
-                    await faceService.ProcessVideoForFacesAsync(file);
+                    await _faceService.ProcessVideoForFacesAsync(file);
                  }
                  catch (Exception ex)
                  {

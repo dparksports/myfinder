@@ -1,8 +1,7 @@
 bin/
 obj/
-.vs/
+publish/
+*.zip
 *.user
-*.suo
-Settings.json
-myfinder_index.json
-crash.log
+.vs/
+*.pdb

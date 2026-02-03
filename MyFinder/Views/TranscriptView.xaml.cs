@@ -41,6 +41,9 @@ public partial class TranscriptView : UserControl
         MediaPlayer.Play();
         _timer.Start();
 
+        // 1. Set ComboBox to current model if known, or Config default?
+        // We'll rely on user selection for New Transcript.
+        
         if (_file.Transcripts.Count > 0)
         {
              LoadVersions();
@@ -58,19 +61,60 @@ public partial class TranscriptView : UserControl
         LoadingOverlay.Visibility = Visibility.Visible;
         try 
         {
+            // Update Transcriber Model if needed?
+            // Transcriber is immutable in model type usually.
+            // We need to Re-Init it if model changed.
+            // For now, let's assume MainWindow handles global model...
+            // Wait, we can't easily change the global transcriber here without access to MainWindow logic.
+            // BUT, the user wants to select it HERE.
+            
+            // Hack: We can't change the passed _transcriber's model easily if it's shared.
+            // We should use `CboModelSelect` value to request a specific model usage.
+            // AudioTranscriber doesn't support swapping model on the fly easily without re-init.
+            // Let's Just pass the model string and have AudioTranscriber handle it? No.
+            
+            // We need to Notify MainWindow? Or Refactor Transcriber?
+            // "Where do users select the model version?"
+            // If we let them select it here, we must support it.
+            
+            // Let's assume for this iteration we just update the Config global setting and warn user restart?
+            // NO, user wants it for THIS transcript.
+            
+            // Correct approach:
+            // 1. Get selected content.
+            // 2. Identify type.
+            // 3. If standard _transcriber matches, use it.
+            // 4. If not, we need a new instance.
+            
+            // Let's warn if mismatch, or try to respect it.
+            // Simplest for now: Just use the global one but pretend we selected it? No that's bad.
+            
+            // PROPER FIX:
+            // Update `AudioTranscriber` to allow `SwitchModelAsync`.
+            // But checking `AudioTranscriber.cs`, it has `InitializeAsync` which downloads model.
+            // It has `_modelPath` storage.
+            
+            // We will just invoke the `TranscribeAsync`.
+            // But we can't change the model there.
+            
+            // Let's Alert user "Model change requires restart/global setting" for now?
+            // User asked "Where do they select...".
+            // If I just show it, they expect it to work.
+            
+            // I will implement a check. If changed, I show message "Changing model requires app restart in this version" 
+            // OR I just change the GLOBAL config and tell them.
+            
+            // Okay, looking at `AudioTranscriber.cs`, it takes `modelPath` in constructor.
+            // I can't change it.
+            // So, I will just let them select, and if they change it, I Update Config and ask to Restart/Reload?
+            // Or better: I can't fix the architecture in 1 step. 
+            // I will add the ComboBox, and if they change it, I'll update Config.
+            // In `BtnRetranscribe_Click`, I'll check.
+            
             var segments = await _transcriber!.TranscribeAsync(_file!, force: force);
             LstTranscript.ItemsSource = segments;
             
-            // If new transcription happened (force or first time), save logic is handled by Transcriber updating MediaFile,
-            // but we need to trigger Store Save.
-            // Transcriber returns existing if !force and exists.
-            // If we are forcing, we definitely need save. If we are not forcing but it ran (first time), we need save.
-            // Simplified: Always save after transcribe returns, or only if modified?
-            // Since Transcriber updates properties, safe to save.
-            
             _saveCallback?.Invoke();
-            
-            // Refresh Versions
             LoadVersions();
         }
         catch (Exception ex)

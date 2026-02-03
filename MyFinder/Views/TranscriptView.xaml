@@ -42,7 +42,14 @@
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <CheckBox Name="ChkCompare" Content="Compare" Foreground="White" VerticalAlignment="Center" Margin="0,0,15,0"
                               Checked="ChkCompare_Checked" Unchecked="ChkCompare_Unchecked"/>
-                    <Button Name="BtnRetranscribe" Content="⟳ New Transcript" Click="BtnRetranscribe_Click"/>
+                     <ComboBox Name="CboModelSelect" Width="100" Margin="0,0,10,0" VerticalContentAlignment="Center" SelectedIndex="1">
+                         <ComboBoxItem Content="Tiny"/>
+                         <ComboBoxItem Content="Base"/>
+                         <ComboBoxItem Content="Small"/>
+                         <ComboBoxItem Content="Medium"/>
+                         <ComboBoxItem Content="Large"/>
+                     </ComboBox>
+                     <Button Name="BtnRetranscribe" Content="⟳ New Transcript" Click="BtnRetranscribe_Click"/>
                 </StackPanel>
                 <TextBlock Name="TxtFileName" Text="Filename.mp4" Foreground="White" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center"/>
             </DockPanel>

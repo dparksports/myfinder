@@ -24,6 +24,7 @@ public class MediaFile
     public DateTime? ExtractedTimestamp { get; set; } // Legacy/Start
     public DateTime? TimestampStart { get; set; }
     public DateTime? TimestampEnd { get; set; }
+    public string? TimestampRaw { get; set; } // Raw text fallback
     public TimeSpan? ComputedDuration { get; set; }
     
     public bool IsVideo 

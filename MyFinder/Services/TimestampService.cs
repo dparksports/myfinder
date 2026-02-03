@@ -45,9 +45,6 @@ public class TimestampService
     public async Task ExtractTimestampAsync(MediaFile file, MetadataStore store)
     {
         if (_engine == null) return;
-
-        // Run on UI thread? No, OCR is thread safe mostly, but VideoCapture might need care.
-        // Actually, pure async method is better.
         
         await Task.Run(async () => 
         {
@@ -55,36 +52,43 @@ public class TimestampService
             if (!capture.IsOpened()) return;
 
             // 1. Get Start Timestamp (Frame 0)
-            DateTime? start = await ExtractDateFromFrameAsync(capture, 0);
+            var startResult = await ExtractDateAndTextFromFrameAsync(capture, 0);
             
             // 2. Get End Timestamp
             int totalFrames = (int)capture.Get(VideoCaptureProperties.FrameCount);
             if (totalFrames < 10) return;
-            DateTime? end = await ExtractDateFromFrameAsync(capture, totalFrames - 5);
+            var endResult = await ExtractDateAndTextFromFrameAsync(capture, totalFrames - 5);
 
             bool foundAny = false;
 
-            if (start != null)
+            if (startResult.Date != null)
             {
-                file.TimestampStart = start;
-                file.ExtractedTimestamp = start;
-                System.Diagnostics.Debug.WriteLine($"Found Start: {start} in {file.FileName}");
+                file.TimestampStart = startResult.Date;
+                file.ExtractedTimestamp = startResult.Date;
+                file.TimestampRaw = startResult.Text; // Store confirmed text
+                System.Diagnostics.Debug.WriteLine($"Found Start: {startResult.Date} in {file.FileName}");
+                foundAny = true;
+            }
+            // Fallback: If no date parsed, but we found text that looks like a date via Regex in ExtractDateAndTextFromFrameAsync
+            else if (!string.IsNullOrEmpty(startResult.Text))
+            {
+                // We'll store it as Raw if it passed a logic check (which we'll add in Extract)
+                file.TimestampRaw = startResult.Text;
+            }
+
+            if (endResult.Date != null)
+            {
+                file.TimestampEnd = endResult.Date;
+                System.Diagnostics.Debug.WriteLine($"Found End: {endResult.Date} in {file.FileName}");
                 foundAny = true;
             }
 
-            if (end != null)
+            if (file.TimestampStart != null && file.TimestampEnd != null && file.TimestampEnd > file.TimestampStart)
             {
-                file.TimestampEnd = end;
-                System.Diagnostics.Debug.WriteLine($"Found End: {end} in {file.FileName}");
-                foundAny = true;
-            }
-
-            if (start != null && end != null && end > start)
-            {
-                file.ComputedDuration = end - start;
+                file.ComputedDuration = file.TimestampEnd - file.TimestampStart;
             }
             
-            if (!foundAny)
+            if (!foundAny && string.IsNullOrEmpty(file.TimestampRaw))
             {
                 if (!file.Tags.Contains("NO TIMESTAMP")) file.Tags.Add("NO TIMESTAMP");
             }
@@ -95,58 +99,87 @@ public class TimestampService
         });
     }
 
-    private async Task<DateTime?> ExtractDateFromFrameAsync(VideoCapture capture, int framePos)
+    private async Task<(string Text, DateTime? Date)> ExtractDateAndTextFromFrameAsync(VideoCapture capture, int framePos)
     {
         capture.Set(VideoCaptureProperties.PosFrames, framePos);
         using var frame = new Mat();
-        if (!capture.Read(frame) || frame.Empty()) return null;
+        if (!capture.Read(frame) || frame.Empty()) return (string.Empty, null);
 
         int w = frame.Width;
         int h = frame.Height;
-        
-        // 1. Crop Top Portion (200px or 25% of height)
-        // User requested top portion specifically.
-        int cropHeight = Math.Min(300, h); // Safer 300px for 4k
+        int cropHeight = Math.Min(300, h);
         using var topStrip = new Mat(frame, new OpenCvSharp.Rect(0, 0, w, cropHeight));
         
-        // 2. Define ROIs on the strip
-        int cropW = w / 3;
-        int stripH = cropHeight;
-        int centerX = (w - cropW) / 2;
+        int cropW = w / 3; // Keep side ROIs at 1/3
+        int centerW = w / 2; // Widen center to 1/2 (50%)
+        int centerX = (w - centerW) / 2;
         
         var rois = new OpenCvSharp.Rect[]
         {
-            new OpenCvSharp.Rect(0, 0, cropW, stripH), // Top-Left
-            new OpenCvSharp.Rect(w - cropW, 0, cropW, stripH), // Top-Right
-            new OpenCvSharp.Rect(centerX, 0, cropW, stripH), // Top-Center
+            new OpenCvSharp.Rect(0, 0, cropW, cropHeight), // Top-Left (33%)
+            new OpenCvSharp.Rect(w - cropW, 0, cropW, cropHeight), // Top-Right (33%)
+            new OpenCvSharp.Rect(centerX, 0, centerW, cropHeight), // Top-Center (50%)
         };
+
+        // We want to find the BEST result.
+        // Priority: 1. Valid Date. 2. Regex Match (Raw Fallback).
+        string bestRaw = string.Empty;
 
         foreach (var roi in rois)
         {
-            // Try Standard
             using var crop = new Mat(topStrip, roi);
-            var result = await TryOcrStrategyAsync(crop);
-            if (result.HasValue) return result;
+            
+            // Define strategies to run (Lazy execution?)
+            // We'll just run them linearly.
+            
+            var strategies = new List<Func<Task<(string, DateTime?)>>>();
+            strategies.Add(async () => await GetOcrResultAsync(crop)); // Standard
+            
+            strategies.Add(async () => {
+                 using var scaled = new Mat();
+                 Cv2.Resize(crop, scaled, new OpenCvSharp.Size(crop.Width * 3, crop.Height * 3));
+                 return await GetOcrResultAsync(scaled);
+            });
+            
+            strategies.Add(async () => {
+                 using var inverted = new Mat();
+                 Cv2.BitwiseNot(crop, inverted);
+                 return await GetOcrResultAsync(inverted);
+            });
+            
+            strategies.Add(async () => {
+                 using var gray = new Mat();
+                 Cv2.CvtColor(crop, gray, ColorConversionCodes.BGR2GRAY);
+                 using var binary = new Mat();
+                 Cv2.Threshold(gray, binary, 0, 255, ThresholdTypes.Otsu | ThresholdTypes.Binary);
+                 using var binaryColor = new Mat();
+                 Cv2.CvtColor(binary, binaryColor, ColorConversionCodes.GRAY2BGRA);
+                 return await GetOcrResultAsync(binaryColor);
+            });
 
-            // Try Scale 3x (for small text on high res)
-            using var scaled = new Mat();
-            Cv2.Resize(crop, scaled, new OpenCvSharp.Size(crop.Width * 3, crop.Height * 3));
-            result = await TryOcrStrategyAsync(scaled);
-            if (result.HasValue) return result;
-
-            // Try Invert (White text)
-             using var inverted = new Mat();
-             Cv2.BitwiseNot(crop, inverted);
-             result = await TryOcrStrategyAsync(inverted);
-             if (result.HasValue) return result;
+            foreach(var strategy in strategies)
+            {
+                var result = await strategy();
+                if (result.Item2 != null) return result; // Found Date!
+                
+                // Fallback: Just capture the text if we haven't found a date yet.
+                // We keep the longest string found, assuming timestamps are longer than random noise/artifacts.
+                if (!string.IsNullOrWhiteSpace(result.Item1))
+                {
+                    if (result.Item1.Length > bestRaw.Length)
+                    {
+                        bestRaw = result.Item1;
+                    }
+                }
+            }
         }
 
-        return null;
+        return (bestRaw, null);
     }
 
-    private async Task<DateTime?> TryOcrStrategyAsync(Mat mat)
+    private async Task<(string Text, DateTime? Date)> GetOcrResultAsync(Mat mat)
     {
-        if (_engine == null) return null;
+        if (_engine == null) return ("Engine Not Init", null);
         try 
         {
             // Mat -> SoftwareBitmap
@@ -166,18 +199,27 @@ public class TimestampService
             var ocrResult = await _engine.RecognizeAsync(softwareBitmap);
             string text = ocrResult.Text;
             
-            if (!string.IsNullOrWhiteSpace(text) && TryParseTimestamp(text, out DateTime date))
+            if (string.IsNullOrWhiteSpace(text)) return ("[Empty]", null);
+            
+            if (TryParseTimestamp(text, out DateTime date))
             {
-                return date;
+                return (text, date);
             }
+            return (text, null);
         }
-        catch 
+        catch (Exception ex)
         {
-            // Ignore OCR errors
+            return ($"Error: {ex.Message}", null);
         }
-        return null;
     }
     
+    // Wrapper for Main Logic (keeps existing signature helper)
+    private async Task<DateTime?> TryOcrStrategyAsync(Mat mat)
+    {
+        var result = await GetOcrResultAsync(mat);
+        return result.Date;
+    }
+
     // Helper extension
     public async Task<string> TestExtractionAsync(string filePath)
     {
@@ -202,69 +244,99 @@ public class TimestampService
              using var topStrip = new Mat(frame, new OpenCvSharp.Rect(0, 0, w, cropHeight));
              
              int cropW = w / 3;
-             int centerX = (w - cropW) / 2;
+             int centerW = w / 2; // Widen center to 1/2 (50%)
+             int centerX = (w - centerW) / 2;
              
              var rois = new OpenCvSharp.Rect[]
              {
                 new OpenCvSharp.Rect(0, 0, cropW, cropHeight),
                 new OpenCvSharp.Rect(w - cropW, 0, cropW, cropHeight),
-                new OpenCvSharp.Rect(centerX, 0, cropW, cropHeight),
+                new OpenCvSharp.Rect(centerX, 0, centerW, cropHeight),
              };
              
              string[] roiNames = { "Top-Left", "Top-Right", "Top-Center" };
              
              for(int i=0; i<rois.Length; i++)
              {
-                 sb.AppendLine($"Checking ROI: {roiNames[i]}");
+                sb.AppendLine($"Checking ROI: {roiNames[i]}");
                  using var crop = new Mat(topStrip, rois[i]);
                  
                  // Strategy 1: Standard
-                 var res1 = await TryOcrStrategyAsync(crop);
-                 sb.AppendLine($" - Standard: {(res1.HasValue ? res1.Value.ToString() : "No Date")}");
+                 var res1 = await GetOcrResultAsync(crop);
+                 sb.AppendLine($" - Standard: '{res1.Text}' -> {(res1.Date.HasValue ? res1.Date.Value.ToString() : "No Date")}");
 
                  // Strategy 2: Scale 3x
                  using var scaled = new Mat();
                  Cv2.Resize(crop, scaled, new OpenCvSharp.Size(crop.Width * 3, crop.Height * 3));
-                 var res2 = await TryOcrStrategyAsync(scaled);
-                 sb.AppendLine($" - Scaled 3x: {(res2.HasValue ? res2.Value.ToString() : "No Date")}");
+                 var res2 = await GetOcrResultAsync(scaled);
+                 sb.AppendLine($" - Scaled 3x: '{res2.Text}' -> {(res2.Date.HasValue ? res2.Date.Value.ToString() : "No Date")}");
                  
                  // Strategy 3: Invert
                  using var inverted = new Mat();
                  Cv2.BitwiseNot(crop, inverted);
-                 var res3 = await TryOcrStrategyAsync(inverted);
-                 sb.AppendLine($" - Inverted: {(res3.HasValue ? res3.Value.ToString() : "No Date")}");
+                 var res3 = await GetOcrResultAsync(inverted);
+                 sb.AppendLine($" - Inverted: '{res3.Text}' -> {(res3.Date.HasValue ? res3.Date.Value.ToString() : "No Date")}");
+
+                 // Strategy 4: Binarization (Otsu)
+                 using var gray = new Mat();
+                 Cv2.CvtColor(crop, gray, ColorConversionCodes.BGR2GRAY);
+                 using var binary = new Mat();
+                 Cv2.Threshold(gray, binary, 0, 255, ThresholdTypes.Otsu | ThresholdTypes.Binary);
+                 using var binaryColor = new Mat();
+                 Cv2.CvtColor(binary, binaryColor, ColorConversionCodes.GRAY2BGRA); // Convert back for OCR
+                 var res4 = await GetOcrResultAsync(binaryColor);
+                 sb.AppendLine($" - Binary (Otsu): '{res4.Text}' -> {(res4.Date.HasValue ? res4.Date.Value.ToString() : "No Date")}");
              }
              
              return sb.ToString();
          }
          catch (Exception ex)
          {
-             return $"Error: {ex.Message}";
+             return $"Error: {ex.Message}\n{ex.StackTrace}";
          }
     }
 
     private bool TryParseTimestamp(string text, out DateTime date)
     {
         // Simplify text
-        var cleaned = text.Replace('O', '0').Replace('l', '1').Replace(',', '.').Replace("|", "").Replace("\n", " ");
+        var cleaned = text.Replace('O', '0').Replace('l', '1').Replace(',', '.')
+                          .Replace("|", "").Replace("\n", " ").Replace("\r", " ").Trim();
         
-        // Remove day names (SUN, MON, etc)
+        // Remove day names (SUN, MON, etc) - checking both ends
         string[] days = { "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT" };
-        foreach (var day in days)
+        
+        // Loop purely for cleaning end strings
+        bool keptCleaning = true;
+        while(keptCleaning)
         {
-            if (cleaned.ToUpper().EndsWith(day))
+            keptCleaning = false;
+            foreach (var day in days)
             {
-                cleaned = cleaned.Substring(0, cleaned.Length - 3).Trim();
+                if (cleaned.ToUpper().EndsWith(day))
+                {
+                    cleaned = cleaned.Substring(0, cleaned.Length - 3).Trim();
+                    keptCleaning = true; 
+                    break;
+                }
             }
         }
         
+        // Also clean "am"/"pm" if attached to day? No formats handle am/pm.
+        
+        // Formats
         string[] formats = 
         { 
             "yyyy/MM/dd hh:mm:ss tt", 
+            "yyyy/MM/dd HH:mm:ss", 
             "yyyy-MM-dd HH:mm:ss", 
             "dd/MM/yyyy HH:mm:ss",
             "MM/dd/yyyy hh:mm:ss tt",
-            "yyyy/MM/dd HH:mm:ss"
+            
+            // Loose variants
+            "yyyy/MM/dd hh:mm:ss",
+            "yyyy.MM.dd hh:mm:ss tt",
+            
+            // Format seen: "2026/01/13 10:00:06 am TUE" -> cleaned to "2026/01/13 10:00:06 am"
         };
         
         if (DateTime.TryParseExact(cleaned, formats, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeLocal, out date))

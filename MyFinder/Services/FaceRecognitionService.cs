@@ -125,4 +125,51 @@ public class FaceRecognitionService
         
         return results.First().AsEnumerable<float>().ToArray();
     }
+
+    public async Task<string> TestFaceDetectionAsync(string videoPath)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"Testing Face Detection on: {Path.GetFileName(videoPath)}");
+        
+        string cascadePath = "haarcascade_frontalface_default.xml";
+        if (!File.Exists(cascadePath)) sb.AppendLine("WARNING: haarcascade_frontalface_default.xml not found using relative path. Checking AppDomain.");
+
+        if (_faceDetector == null && _recSession == null) return sb.AppendLine("Services not initialized.").ToString();
+
+        await Task.Run(() => 
+        {
+             using var capture = new VideoCapture(videoPath);
+             if (!capture.IsOpened()) 
+             {
+                 sb.AppendLine("Could not open video via OpenCV.");
+                 return;
+             }
+             
+             int totalFrames = (int)capture.Get(VideoCaptureProperties.FrameCount);
+             sb.AppendLine($"Total Frames: {totalFrames}");
+             
+             // Check first 3 seconds
+             int framesToCheck = Math.Min(totalFrames, 90); 
+             int facesFound = 0;
+             
+             for (int i = 0; i < framesToCheck; i += 10) // Check every 10th frame
+             {
+                 capture.Set(VideoCaptureProperties.PosFrames, i);
+                 using var frame = new Mat();
+                 capture.Read(frame);
+                 if (frame.Empty()) continue;
+                 
+                 var faces = DetectFaces(frame);
+                 if (faces.Length > 0)
+                 {
+                     sb.AppendLine($"Frame {i}: Found {faces.Length} face(s).");
+                     facesFound += faces.Length;
+                 }
+             }
+             
+             if (facesFound == 0) sb.AppendLine("No faces found in first 3 seconds.");
+        });
+        
+        return sb.ToString();
+    }
 }
