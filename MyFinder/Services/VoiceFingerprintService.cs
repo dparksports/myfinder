@@ -40,13 +40,17 @@ public class VoiceFingerprintService
         return await Task.Run(() =>
         {
             // 1. Read Audio (Force 16kHz Mono)
-            // Use NAudio to read via MediaFoundation (supports mp3, mp4 extraction)
+            // Use MediaFoundationReader directly to stream, avoiding full file scan
             float[] samples;
             try 
             {
-                using var reader = new AudioFileReader(audioPath);
-                var resampler = new MediaFoundationResampler(reader, new WaveFormat(16000, 1)); // Resample to 16k
-                var buffer = new byte[resampler.WaveFormat.AverageBytesPerSecond * 3]; // Read 3 seconds
+                using var reader = new MediaFoundationReader(audioPath);
+                var outFormat = new WaveFormat(16000, 1);
+                using var resampler = new MediaFoundationResampler(reader, outFormat);
+                
+                // Read 3 seconds max (16000 * 3 * 2 bytes = 96000 bytes)
+                int bytesToRead = outFormat.AverageBytesPerSecond * 3;
+                var buffer = new byte[bytesToRead];
                 int read = resampler.Read(buffer, 0, buffer.Length);
                 
                 // Convert byte to float
@@ -64,13 +68,20 @@ public class VoiceFingerprintService
                 return new float[0];
             }
 
-            if (samples.Length < 1600) return new float[0]; // Too short
+            return GetEmbeddingFromSamples(samples);
+        });
+    }
 
+    public float[] GetEmbeddingFromSamples(float[] samples)
+    {
+        if (_session == null) return new float[0];
+        if (samples.Length < 1600) return new float[0]; // Too short (< 0.1s)
+
+        try 
+        {
             // 2. Extract MFCC (Mel-Frequency Cepstral Coefficients)
             // VoxCeleb models usually take Spectrograms or MFCCs.
             // Let's assume a simplified ResNet that takes raw MFCC blocks (80 dim).
-            // Configuration depends heavily on the specific ONNX model used.
-            // WE ASSUME standard configuration: 80 Mel bands.
             
             var options = new MfccOptions
             {
@@ -84,21 +95,26 @@ public class VoiceFingerprintService
             var mfccs = extractor.ComputeFrom(samples);
 
             // 3. Create Tensor [1, 1, Time, 80] or [1, 80, Time]
-            // Standard layout is often [Batch, Channel, Height, Width] -> [1, 1, Time, Freq]
-            // We need to crop/pad to fixed size (e.g., 200 frames = 2 seconds)
             
-            int timeSteps = 200;
-            if (mfccs.Count < timeSteps) return new float[0]; // Need at least 2 secs
-            
+            int timeSteps = 200; // Fixed size input often required
+            if (mfccs.Count < timeSteps) 
+            {
+                 // Pad or resize? For now, return empty if too short for model
+                 // return new float[0]; 
+                 // Actually, let's just take whatever we have or 200 min
+                 timeSteps = Math.Min(mfccs.Count, 200); 
+            }
+            // For robustness, stick to 200. If less, padding is better.
+            if (mfccs.Count < 200) return new float[0]; // Strict 2s min
+            timeSteps = 200;
+
             // Build Tensor
             var tensor = new DenseTensor<float>(new[] { 1, 1, 80, timeSteps }); 
-            // Warning: Dimension order varies by model (BxCxHxW vs BxTxF)
             
             for (int t = 0; t < timeSteps; t++)
             {
                 for (int f = 0; f < 80; f++)
                 {
-                     // MfccExtractor returns [Time][Freq]
                      tensor[0, 0, f, t] = (float)mfccs[t][f];
                 }
             }
@@ -109,8 +125,16 @@ public class VoiceFingerprintService
                 NamedOnnxValue.CreateFromTensor("input", tensor) 
             };
 
-            using var results = _session.Run(inputs);
-            return results.First().AsEnumerable<float>().ToArray();
-        });
+            lock (_session) // OnnxRuntime is thread-safe but check session lock policy
+            {
+                using var results = _session.Run(inputs);
+                return results.First().AsEnumerable<float>().ToArray();
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Inference Failed: {ex.Message}");
+            return new float[0];
+        }
     }
 }

@@ -78,4 +78,34 @@ ONNX Runtime supports **DirectML**, meaning it works great on AMD, Intel, and NV
 1.  **Prototype**: Basic file scanning + SQLite DB + Video Playback UI.
 2.  **AI Integration 1**: Content-Analysis (YOLO) & Deduplication.
 3.  **AI Integration 2**: Transcription (Whisper).
-4.  **AI Integration 3**: Face/Voice Recognition.
+## 6. Voice ID Strategy for Sparse Dialogs (Large Files)
+
+### **Challenge**
+Large video files (e.g., 2GB, 1 hour) often have sparse dialogue. Loading the entire file into memory crashes the app. Sampling only the first 3 seconds often misses the voice Entirely.
+
+### **Solution Design**
+Instead of a single "Voice ID" check, we implement a **Voice Scanning Pipeline**:
+
+#### **Phase 1: Efficient Scanning (Stream-based)**
+1.  **Audio Extraction**: Extract the audio track to a temporary, low-bitrate (16kHz mono) WAV file.
+    *   *Why?* Reading a 50MB audio file is much faster/ safer than seeking through a 2GB video file.
+2.  **Voice Activity Detection (VAD)**:
+    *   **Option A (High Accuracy)**: Use **Whisper** to transcribe the file. Whisper implicitly performs VAD. We get a list of segments: `[{Start: 10s, End: 15s}, {Start: 500s, End: 505s}]`.
+    *   **Option B (Fast)**: Use simple RMS/Energy gating (if volume > threshold).
+
+#### **Phase 2: Embedding Extraction**
+Iterate through the detected segments:
+1.  **Snippet Extraction**: Read the specific audio chunk (e.g., `10s` to `15s`) from the temp WAV.
+2.  **Vectorization**: Pass the chunk to the `VoiceFingerprintService` (VoxCeleb ONNX).
+3.  **Storage**: Store `{ FileID, TimeStart, TimeEnd, Vector[] }`.
+
+#### **Phase 3: Clustering (Diarization)**
+1.  **Compare**: Calculate Cosine Similarity between all vectors in the file.
+2.  **Group**: Cluster similar vectors together (e.g., "Speaker A", "Speaker B").
+3.  **UI Representation**:
+    *   Instead of "File has Voice X", show a **Timeline** or **Speaker List**.
+    *   **User Action**: "Found 3 distinct voices. Click to listen to samples." -> User names Speaker A "John".
+
+### **Implementation Roadmap**
+1.  **Update `VoiceFingerprintService`**: Add method `ProcessAudioSegments(string audioPath, List<Segment> segments)`.
+2.  **Update UI**: Add a "Voice Analysis" tab or detailed view that lists detected speakers and their timestamps.

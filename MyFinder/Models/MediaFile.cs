@@ -21,7 +21,19 @@ public class MediaFile
     public ulong? PerceptualHash { get; set; }
     
     // Metadata
-    public DateTime? ExtractedTimestamp { get; set; }
+    public DateTime? ExtractedTimestamp { get; set; } // Legacy/Start
+    public DateTime? TimestampStart { get; set; }
+    public DateTime? TimestampEnd { get; set; }
+    public TimeSpan? ComputedDuration { get; set; }
+    
+    public bool IsVideo 
+    {
+        get 
+        {
+            var ext = System.IO.Path.GetExtension(FileName)?.ToLower();
+            return ext == ".mp4" || ext == ".mkv" || ext == ".avi" || ext == ".mov";
+        }
+    }
     public List<string> PersonNames { get; set; } = new();
     public string? TranscriptSnippet { get; set; } // Short preview
     

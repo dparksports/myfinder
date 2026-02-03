@@ -14,9 +14,11 @@ public class MetadataStore
     private readonly string _storagePath;
     private Dictionary<string, MediaFile> _cache = new();
 
-    public MetadataStore(string appDataPath)
+    public MetadataStore(string appDataPath, string uniqueId = "default")
     {
-        _storagePath = Path.Combine(appDataPath, IndexFileName);
+        // e.g. "myfinder_index_883999226.json"
+        string fileName = $"myfinder_index_{uniqueId}.json";
+        _storagePath = Path.Combine(appDataPath, fileName);
     }
 
     public async Task LoadAsync()

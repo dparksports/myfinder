@@ -26,60 +26,75 @@ public class AudioTranscriber
         
         await Task.Run(async () => 
         {
-            if (!File.Exists(_modelPath))
+            try
             {
-                // Auto-download model if missing (Base model ~140MB)
-                // In a real app, show progress. Here we block or skip.
-                if (!File.Exists(_modelPath))
+                if (!File.Exists(_modelPath) || new FileInfo(_modelPath).Length == 0)
                 {
                     // Update for Whisper.net 1.5+: Downloader is instance-based
-                    using var client = new System.Net.Http.HttpClient();
-                    var downloader = new WhisperGgmlDownloader(client);
-                    using var modelStream = await downloader.GetGgmlModelAsync(GgmlType.Base);
+                    // Update for Whisper.net 1.5+: Downloader is static
+                    using var modelStream = await WhisperGgmlDownloader.GetGgmlModelAsync(GgmlType.Base);
                     using var fileWriter = File.OpenWrite(_modelPath);
                     await modelStream.CopyToAsync(fileWriter);
                 }
+                
+                _factory = WhisperFactory.FromPath(_modelPath);
+                _processor = _factory.CreateBuilder()
+                    .WithLanguage("auto")
+                    .Build();
             }
-            
-            _factory = WhisperFactory.FromPath(_modelPath);
-            _processor = _factory.CreateBuilder()
-                .WithLanguage("auto")
-                .Build();
+            catch (Exception ex)
+            {
+                 // Log or rethrow to be caught by UI
+                 // Clean up partial file
+                 if (File.Exists(_modelPath) && new FileInfo(_modelPath).Length == 0) File.Delete(_modelPath);
+                 throw new Exception($"Failed to initialize Whisper: {ex.Message}", ex);
+            }
         });
     }
 
-    public async Task<string> TranscribeAsync(MediaFile file)
+    public async Task<List<TranscriptionSegment>> TranscribeAsync(MediaFile file, string wavPath = null)
     {
-        if (_factory == null) return "Model not loaded";
+        var segments = new List<TranscriptionSegment>();
+        if (_factory == null) return segments;
 
-        // 1. Extract Audio to 16kHz WAV (Resampled) using FFmpeg
-        string tempWav = Path.ChangeExtension(Path.GetTempFileName(), ".wav");
-        
+        // 1. Extract Audio if not provided
+        string tempWav = wavPath ?? Path.ChangeExtension(Path.GetTempFileName(), ".wav");
+        bool deleteTemp = wavPath == null;
+
         try 
         {
-            if (await ExtractAudioAsync(file.FilePath, tempWav))
+            if (wavPath != null || await ExtractAudioAsync(file.FilePath, tempWav))
             {
                 using var fileStream = File.OpenRead(tempWav);
-                var segments = new List<string>();
                 
                 await foreach (var segment in _processor.ProcessAsync(fileStream))
                 {
-                   segments.Add($"[{segment.Start} - {segment.End}] {segment.Text}");
+                   segments.Add(new TranscriptionSegment 
+                   {
+                       Start = segment.Start,
+                       End = segment.End,
+                       Text = segment.Text
+                   });
                 }
-                
-                return string.Join("\n", segments);
             }
         }
         catch (Exception ex)
         {
-            return $"Error: {ex.Message}";
+            System.Diagnostics.Debug.WriteLine($"Error: {ex.Message}");
         }
         finally
         {
-            if (File.Exists(tempWav)) File.Delete(tempWav);
+            if (deleteTemp && File.Exists(tempWav)) File.Delete(tempWav);
         }
         
-        return "Extraction Failed";
+        return segments;
+    }
+
+    public class TranscriptionSegment
+    {
+        public TimeSpan Start { get; set; }
+        public TimeSpan End { get; set; }
+        public string Text { get; set; } = "";
     }
 
     private async Task<bool> ExtractAudioAsync(string inputPath, string outputPath)

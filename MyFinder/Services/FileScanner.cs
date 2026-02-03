@@ -10,6 +10,7 @@ namespace MyFinder.Services;
 public class FileScanner
 {
     private readonly MetadataStore _store;
+    private readonly TimestampService _timestampService;
     private readonly HashSet<string> _allowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".mp4", ".mkv", ".avi", ".mov", ".mp3", ".wav", ".flac", ".m4a"
@@ -18,9 +19,10 @@ public class FileScanner
     public event Action<string>? OnFileFound;
     public event Action<int>? OnScanComplete;
 
-    public FileScanner(MetadataStore store)
+    public FileScanner(MetadataStore store, TimestampService timestampService)
     {
         _store = store;
+        _timestampService = timestampService;
     }
 
     public bool SkipSystemFolders { get; set; } = true;
@@ -79,18 +81,19 @@ public class FileScanner
     {
         var fileInfo = new FileInfo(filePath);
         var existing = _store.GetByPath(filePath);
+        MediaFile targetFile = existing;
 
         if (existing == null)
         {
             // New file
-            var newFile = new MediaFile
+            targetFile = new MediaFile
             {
                 FilePath = filePath,
                 FileName = fileInfo.Name,
                 LastModified = fileInfo.LastWriteTime,
                 FileSizeBytes = fileInfo.Length
             };
-            _store.Upsert(newFile);
+            _store.Upsert(targetFile);
         }
         else
         {
@@ -102,6 +105,16 @@ public class FileScanner
                 existing.IsLowContent = false; // Reset analysis if file changed
                 _store.Upsert(existing);
             }
+        }
+
+        // Trigger Timestamp Extraction (Background)
+        // Only if it doesn't have one or if it's new/modified?
+        // Let's rely on Service to optimize or MediaFile properties.
+        // MediaFile has ExtractedTimestamp.
+        if (targetFile.TimestampStart == null && !targetFile.Tags.Contains("NO TIMESTAMP"))
+        {
+             // Fire and forget
+             _ = _timestampService.ExtractTimestampAsync(targetFile, _store);
         }
     }
 }
