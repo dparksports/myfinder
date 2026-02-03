@@ -12,6 +12,11 @@ public class ConfigService
 
     public bool SkipSystemFolders { get; set; } = true;
     public int RecencyDurationHours { get; set; } = 24;
+    
+    // Object Detection Settings
+    public bool DetectPersons { get; set; } = true;
+    public bool DetectVehicles { get; set; } = true;
+    public bool DetectAnimals { get; set; } = true;
 
     public ConfigService(string appDataPath)
     {
@@ -30,6 +35,10 @@ public class ConfigService
             {
                 SkipSystemFolders = settings.SkipSystemFolders;
                 RecencyDurationHours = settings.RecencyDurationHours;
+                
+                DetectPersons = settings.DetectPersons;
+                DetectVehicles = settings.DetectVehicles;
+                DetectAnimals = settings.DetectAnimals;
             }
         }
         catch (JsonException)

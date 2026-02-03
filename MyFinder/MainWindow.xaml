@@ -118,6 +118,9 @@
                             <Border Background="#33FF5555" CornerRadius="4" Padding="4,2" Visibility="{Binding IsAnalyzed, Converter={StaticResource BoolVis}, ConverterParameter=Inverse}">
                                 <TextBlock Text="CONTENT NOT SCANNED" Foreground="#FF5555" FontSize="9" FontWeight="Bold"/>
                             </Border>
+                            <Border Background="#33FFAA00" CornerRadius="4" Padding="4,2" Margin="5,0,0,0" ToolTip="No Configured Objects Found" Visibility="{Binding IsLowContent, Converter={StaticResource BoolVis}}">
+                                <TextBlock Text="NO OBJECTS DETECTED" Foreground="#FFAA00" FontSize="9" FontWeight="Bold"/>
+                            </Border>
                             <Border Background="#3355FF55" CornerRadius="4" Padding="4,2" Margin="5,0,0,0" ToolTip="AI Interest Score">
                                 <TextBlock Text="{Binding ContentScore, StringFormat='SCORE: {0:P0}'}" Foreground="#55FF55" FontSize="9" FontWeight="Bold"/>
                             </Border>

@@ -299,7 +299,7 @@ public partial class MainWindow : Window
     {
         string modelPath = GetModelPath("yolov8n.onnx");
         
-        var analyzer = new MyFinder.Services.VideoAnalyzer(modelPath);
+        var analyzer = new MyFinder.Services.VideoAnalyzer(modelPath, _config);
         // Aggregate all for analysis
         var files = _stores.Values.SelectMany(s => s.GetAll()).ToList();
         int processed = 0;

@@ -14,15 +14,17 @@ namespace MyFinder.Services;
 public class VideoAnalyzer
 {
     private readonly string _modelPath;
+    private readonly ConfigService _config;
     private InferenceSession? _session;
     
     // Classes we care about (from COCO dataset)
     // 0: person, 1: bicycle, 2: car ... 15: cat, 16: dog
     private readonly int[] _interestingClasses = { 0, 1, 2, 15, 16 };
 
-    public VideoAnalyzer(string modelPath)
+    public VideoAnalyzer(string modelPath, ConfigService config)
     {
         _modelPath = modelPath;
+        _config = config;
     }
 
     public async Task InitializeAsync()
@@ -77,7 +79,7 @@ public class VideoAnalyzer
             if (processedFrames > 0)
             {
                 file.ContentScore = (double)framesWithContent / processedFrames;
-                file.IsLowContent = file.ContentScore < 0.1; // Less than 10% interesting frames
+                file.IsLowContent = framesWithContent == 0; // Strict: True only if absolutely NO objects found
             }
         });
     }
@@ -125,18 +127,45 @@ public class VideoAnalyzer
 
     private bool ParseYoloOutput(Tensor<float> output)
     {
-        // Check if any anchor has a high class score for interesting classes
-        // Accessing tensor dimensions: [1, 84, 8400]
+        // YOLOv8 output: [1, 84, 8400]
+        // Rows 0-3: Box Coordinates
+        // Rows 4-83: Class Probabilities
         
+        bool detectPerson = _config.DetectPersons;
+        bool detectVehicle = _config.DetectVehicles;
+        bool detectAnimal = _config.DetectAnimals;
+        
+        float threshold = 0.45f; // Threshold
+
         // Loop through 8400 anchors
         for (int i = 0; i < 8400; i++)
         {
-            // Check Person (Class 0 -> Index 4)
-            float personScore = output[0, 4, i]; 
-            if (personScore > 0.5f) return true;
+            // PERSON (Class 0 -> Index 4)
+            if (detectPerson && output[0, 4, i] > threshold) return true;
+
+            // VEHICLES
+            if (detectVehicle)
+            {
+                if (output[0, 6, i] > threshold) return true; // Car (Class 2 -> Index 6)
+                if (output[0, 5, i] > threshold) return true; // Bicycle (Class 1 -> Index 5)
+                if (output[0, 7, i] > threshold) return true; // Motorcycle (Class 3 -> Index 7)
+                if (output[0, 9, i] > threshold) return true; // Bus (Class 5 -> Index 9)
+                if (output[0, 11, i] > threshold) return true; // Truck (Class 7 -> Index 11)
+            }
+
+            // ANIMALS
+            if (detectAnimal)
+            {
+                // Classes 14-23 (Indices 18-27)
+                // Bird, Cat, Dog, Horse, Sheep, Cow, Elephant, Bear, Zebra, Giraffe
+                for (int c = 18; c <= 27; c++)
+                {
+                     if (output[0, c, i] > threshold) return true;
+                }
+            }
         }
         
-        return false;
+        return false; // No specified object found
     }
     
     private DenseTensor<float> ExtractTensor(Mat blob)

@@ -16,6 +16,10 @@ public partial class SettingsWindow : Window
         // Load values
         ChkSkipSystem.IsChecked = _config.SkipSystemFolders;
         TxtRecency.Text = _config.RecencyDurationHours.ToString();
+        
+        ChkPerson.IsChecked = _config.DetectPersons;
+        ChkVehicle.IsChecked = _config.DetectVehicles;
+        ChkAnimal.IsChecked = _config.DetectAnimals;
     }
 
     private async void BtnSave_Click(object sender, RoutedEventArgs e)
@@ -32,6 +36,10 @@ public partial class SettingsWindow : Window
         }
 
         _config.SkipSystemFolders = ChkSkipSystem.IsChecked ?? true;
+        
+        _config.DetectPersons = ChkPerson.IsChecked ?? false;
+        _config.DetectVehicles = ChkVehicle.IsChecked ?? false;
+        _config.DetectAnimals = ChkAnimal.IsChecked ?? false;
 
         await _config.SaveAsync();
         DialogResult = true;
