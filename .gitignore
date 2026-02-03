@@ -1,0 +1,8 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+Settings.json
+myfinder_index.json
+crash.log

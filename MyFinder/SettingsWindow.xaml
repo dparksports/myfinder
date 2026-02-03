@@ -1,0 +1,32 @@
+<Window x:Class="MyFinder.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Settings" Height="300" Width="400" WindowStartupLocation="CenterOwner" Background="#1E1E1E">
+    <StackPanel Margin="20">
+        <TextBlock Text="SETTINGS" Foreground="White" FontSize="20" FontWeight="Bold" Margin="0,0,0,20"/>
+
+        <!-- Scan Settings -->
+        <GroupBox Header="Scan Settings" Foreground="#AAA" BorderBrush="#333" Padding="10">
+            <StackPanel>
+                <CheckBox Name="ChkSkipSystem" Content="Skip System Folders (e.g. Windows, Program Files)" Foreground="White" Margin="0,5"/>
+            </StackPanel>
+        </GroupBox>
+
+        <!-- General Settings -->
+        <GroupBox Header="General" Foreground="#AAA" BorderBrush="#333" Padding="10" Margin="0,10,0,0">
+            <StackPanel>
+                <DockPanel Margin="0,5">
+                    <TextBlock Text="Recent Files Duration (Hours):" Foreground="White" VerticalAlignment="Center"/>
+                    <TextBox Name="TxtRecency" Width="60" HorizontalAlignment="Right" TextAlignment="Center" Background="#2D2D30" Foreground="White" BorderThickness="1" BorderBrush="#444"/>
+                </DockPanel>
+            </StackPanel>
+        </GroupBox>
+
+        <!-- Dangerous Actions -->
+        <GroupBox Header="Actions" Foreground="#AAA" BorderBrush="#333" Padding="10" Margin="0,10,0,0">
+            <Button Name="BtnWipe" Content="⚠ Wipe Database &amp; Reset" Background="#aa3333" Foreground="White" BorderThickness="0" Padding="10,5" Click="BtnWipe_Click"/>
+        </GroupBox>
+
+        <Button Name="BtnSave" Content="Save &amp; Close" Background="#007ACC" Foreground="White" BorderThickness="0" Padding="10" Margin="0,20,0,0" Click="BtnSave_Click"/>
+    </StackPanel>
+</Window>
