@@ -35,11 +35,57 @@
             <RowDefinition Height="*"/>    <!-- Transcript -->
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <DockPanel Grid.Row="0" Margin="10">
-            <Button Name="BtnBack" Content="← Back to Gallery" DockPanel.Dock="Left" Click="BtnBack_Click"/>
-            <TextBlock Name="TxtFileName" Text="Filename.mp4" Foreground="White" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-        </DockPanel>
+        <!-- Header & Controls -->
+        <StackPanel Grid.Row="0" Margin="10">
+            <DockPanel LastChildFill="True">
+                <Button Name="BtnBack" Content="← Back" DockPanel.Dock="Left" Click="BtnBack_Click"/>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <CheckBox Name="ChkCompare" Content="Compare" Foreground="White" VerticalAlignment="Center" Margin="0,0,15,0"
+                              Checked="ChkCompare_Checked" Unchecked="ChkCompare_Unchecked"/>
+                    <Button Name="BtnRetranscribe" Content="⟳ New Transcript" Click="BtnRetranscribe_Click"/>
+                </StackPanel>
+                <TextBlock Name="TxtFileName" Text="Filename.mp4" Foreground="White" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center"/>
+            </DockPanel>
+            
+            <!-- Version Selectors -->
+            <Grid Margin="0,10,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                
+                <Grid Grid.Column="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <ComboBox Name="CboPrimary" SelectionChanged="CboPrimary_SelectionChanged" HorizontalAlignment="Stretch" Height="30" VerticalContentAlignment="Center">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                 <StackPanel Orientation="Horizontal">
+                                     <TextBlock Text="{Binding Model}" FontWeight="Bold" Margin="0,0,5,0"/>
+                                     <TextBlock Text="{Binding Created, StringFormat='{}{0:g}'}" Foreground="Gray"/>
+                                 </StackPanel>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button Name="BtnDelete" Grid.Column="1" Content="🗑" Width="30" Margin="5,0,0,0" Click="BtnDelete_Click" ToolTip="Delete this transcript version" Background="#442222"/>
+                </Grid>
+                
+                <ComboBox Name="CboSecondary" Grid.Column="2" SelectionChanged="CboSecondary_SelectionChanged" 
+                          HorizontalAlignment="Stretch" Height="30" VerticalContentAlignment="Center" Visibility="Hidden">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                             <StackPanel Orientation="Horizontal">
+                                 <TextBlock Text="{Binding Model}" FontWeight="Bold" Margin="0,0,5,0"/>
+                                 <TextBlock Text="{Binding Created, StringFormat='{}{0:g}'}" Foreground="Gray"/>
+                             </StackPanel>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </Grid>
+        </StackPanel>
 
         <!-- Video Player Section -->
         <Border Grid.Row="1" Background="Black" Height="300" Margin="10,0,10,10" CornerRadius="5">
@@ -79,8 +125,14 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Name="ColSecondary" Width="0"/>
+            </Grid.ColumnDefinitions>
             
             <TextBlock Text="TRANSCRIPT (Click to Seek)" Foreground="#AAA" FontWeight="Bold" Margin="0,0,0,5"/>
+            <TextBlock Grid.Column="2" Text="COMPARISON" Foreground="#AAA" FontWeight="Bold" Margin="0,0,0,5" Visibility="{Binding ElementName=CboSecondary, Path=Visibility}"/>
             
             <ListView Name="LstTranscript" Grid.Row="1" Background="Transparent" BorderThickness="0" Foreground="White" 
                       SelectionChanged="LstTranscript_SelectionChanged" HorizontalContentAlignment="Stretch">
@@ -105,6 +157,37 @@
                                 <Setter Property="Background" Value="#11FFFFFF"/>
                             </Trigger>
                         </Style.Triggers>
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="60"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding Start, StringFormat=mm\\:ss}" Foreground="#00CCFF" FontWeight="Bold" VerticalAlignment="Top"/>
+                            <TextBlock Grid.Column="1" Text="{Binding Text}" Foreground="#DDD" TextWrapping="Wrap" Margin="10,0,0,0"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+            
+            <!-- Secondary List -->
+            <ListView Name="LstTranscriptSecondary" Grid.Row="1" Grid.Column="2" Background="Transparent" BorderThickness="0" Foreground="White" 
+                      SelectionChanged="LstTranscriptSecondary_SelectionChanged" HorizontalContentAlignment="Stretch" Visibility="Hidden">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListViewItem">
+                                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="0,0,0,1" Padding="5">
+                                        <ContentPresenter/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
                     </Style>
                 </ListView.ItemContainerStyle>
                 <ListView.ItemTemplate>

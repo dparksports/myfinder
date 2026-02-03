@@ -81,7 +81,7 @@ public class FileScanner
     {
         var fileInfo = new FileInfo(filePath);
         var existing = _store.GetByPath(filePath);
-        MediaFile targetFile = existing;
+        MediaFile targetFile;
 
         if (existing == null)
         {
@@ -97,6 +97,7 @@ public class FileScanner
         }
         else
         {
+            targetFile = existing;
             // Update existing if changed
             if (existing.LastModified != fileInfo.LastWriteTime || existing.FileSizeBytes != fileInfo.Length)
             {

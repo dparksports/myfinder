@@ -13,7 +13,7 @@ namespace MyFinder.Services;
 
 public class TimestampService
 {
-    private OcrEngine _engine;
+    private OcrEngine? _engine;
     
     public TimestampService(string appDataPath)
     {
@@ -146,6 +146,7 @@ public class TimestampService
 
     private async Task<DateTime?> TryOcrStrategyAsync(Mat mat)
     {
+        if (_engine == null) return null;
         try 
         {
             // Mat -> SoftwareBitmap
@@ -178,6 +179,70 @@ public class TimestampService
     }
     
     // Helper extension
+    public async Task<string> TestExtractionAsync(string filePath)
+    {
+         if (_engine == null) return "OCR Engine not initialized.";
+         var sb = new System.Text.StringBuilder();
+         
+         try 
+         {
+             using var capture = new VideoCapture(filePath);
+             if (!capture.IsOpened()) return "Could not open video file.";
+             
+             // Test Frame 0
+             sb.AppendLine($"Testing Frame 0 of {System.IO.Path.GetFileName(filePath)}...");
+             capture.Set(VideoCaptureProperties.PosFrames, 0);
+             using var frame = new Mat();
+             capture.Read(frame);
+             if (frame.Empty()) return "Frame 0 is empty.";
+             
+             int w = frame.Width;
+             int h = frame.Height;
+             int cropHeight = Math.Min(300, h);
+             using var topStrip = new Mat(frame, new OpenCvSharp.Rect(0, 0, w, cropHeight));
+             
+             int cropW = w / 3;
+             int centerX = (w - cropW) / 2;
+             
+             var rois = new OpenCvSharp.Rect[]
+             {
+                new OpenCvSharp.Rect(0, 0, cropW, cropHeight),
+                new OpenCvSharp.Rect(w - cropW, 0, cropW, cropHeight),
+                new OpenCvSharp.Rect(centerX, 0, cropW, cropHeight),
+             };
+             
+             string[] roiNames = { "Top-Left", "Top-Right", "Top-Center" };
+             
+             for(int i=0; i<rois.Length; i++)
+             {
+                 sb.AppendLine($"Checking ROI: {roiNames[i]}");
+                 using var crop = new Mat(topStrip, rois[i]);
+                 
+                 // Strategy 1: Standard
+                 var res1 = await TryOcrStrategyAsync(crop);
+                 sb.AppendLine($" - Standard: {(res1.HasValue ? res1.Value.ToString() : "No Date")}");
+
+                 // Strategy 2: Scale 3x
+                 using var scaled = new Mat();
+                 Cv2.Resize(crop, scaled, new OpenCvSharp.Size(crop.Width * 3, crop.Height * 3));
+                 var res2 = await TryOcrStrategyAsync(scaled);
+                 sb.AppendLine($" - Scaled 3x: {(res2.HasValue ? res2.Value.ToString() : "No Date")}");
+                 
+                 // Strategy 3: Invert
+                 using var inverted = new Mat();
+                 Cv2.BitwiseNot(crop, inverted);
+                 var res3 = await TryOcrStrategyAsync(inverted);
+                 sb.AppendLine($" - Inverted: {(res3.HasValue ? res3.Value.ToString() : "No Date")}");
+             }
+             
+             return sb.ToString();
+         }
+         catch (Exception ex)
+         {
+             return $"Error: {ex.Message}";
+         }
+    }
+
     private bool TryParseTimestamp(string text, out DateTime date)
     {
         // Simplify text

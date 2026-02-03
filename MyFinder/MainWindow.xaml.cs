@@ -20,22 +20,22 @@ public partial class MainWindow : Window
     private readonly MyFinder.Services.ConfigService _config;
     private readonly MyFinder.Services.DriveIdentificationService _driveService;
     // AI Services (Shared to avoid reloading models)
-    private MyFinder.Services.AudioTranscriber _transcriber;
-    private MyFinder.Services.VoiceFingerprintService _voiceService;
-    private MyFinder.Services.TimestampService _timestampService;
+    private MyFinder.Services.AudioTranscriber? _transcriber;
+    private MyFinder.Services.VoiceFingerprintService? _voiceService;
+    private MyFinder.Services.TimestampService? _timestampService;
 
     private bool _isListView = false;
     private bool _showRecentOnly = false;
 
     public class DriveViewModel
     {
-        public string Name { get; set; } // "C:\"
-        public string Label { get; set; } // "Windows"
-        public string DriveId { get; set; } // "883999226"
+        public required string Name { get; set; } // "C:\"
+        public required string Label { get; set; } // "Windows"
+        public required string DriveId { get; set; } // "883999226"
         public string DisplayName => $"{Label} ({Name})";
         public bool IsSelected { get; set; }
-        public MyFinder.Services.FileScanner Scanner { get; set; }
-        public MyFinder.Services.MetadataStore Store { get; set; }
+        public required MyFinder.Services.FileScanner Scanner { get; set; }
+        public required MyFinder.Services.MetadataStore Store { get; set; }
     }
 
     public List<DriveViewModel> DriveList { get; set; } = new();
@@ -67,8 +67,15 @@ public partial class MainWindow : Window
             await MyFinder.Services.ModelManager.EnsureAllModelsAsync(progress);
             
             // Init AI Services
+            // Init AI Services
             string commonData = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "MyFinder");
-            _transcriber = new MyFinder.Services.AudioTranscriber(System.IO.Path.Combine(commonData, "ggml-base.bin"));
+            
+            // Parse Model Type
+            Whisper.net.Ggml.GgmlType modelType = Whisper.net.Ggml.GgmlType.Base;
+            if (Enum.TryParse(_config.WhisperModel, true, out Whisper.net.Ggml.GgmlType parsed))
+                modelType = parsed;
+                
+            _transcriber = new MyFinder.Services.AudioTranscriber(System.IO.Path.Combine(commonData, $"ggml-{modelType.ToString().ToLower()}.bin"), modelType);
             _voiceService = new MyFinder.Services.VoiceFingerprintService(System.IO.Path.Combine(commonData, "voxceleb.onnx"));
             _timestampService = new MyFinder.Services.TimestampService(commonData); // Init Service
             
@@ -79,8 +86,16 @@ public partial class MainWindow : Window
                 MainGalleryView.Visibility = Visibility.Visible;
             };
 
+            // Wire up Settings Back Button
+            SettingsScreen.BackRequested += (s, args) => 
+            {
+                SettingsScreen.Visibility = Visibility.Collapsed;
+                MainGalleryView.Visibility = Visibility.Visible;
+                RefreshList(); // Refresh in case settings changed
+            };
+
             // Background Init
-            Task.Run(async () => 
+            _ = Task.Run(async () => 
             {
                await _transcriber.InitializeAsync();
                await _voiceService.InitializeAsync();
@@ -103,7 +118,7 @@ public partial class MainWindow : Window
             _stores[id] = store; // Keep track globally if needed
             
             // Init Scanner
-            var scanner = new MyFinder.Services.FileScanner(store, _timestampService);
+            var scanner = new MyFinder.Services.FileScanner(store, _timestampService!);
             scanner.SkipSystemFolders = _config.SkipSystemFolders;
             
             // Wire up events
@@ -147,67 +162,22 @@ public partial class MainWindow : Window
         return fileName;
     }
 
+    /* BtnBrowse removed
     private void BtnBrowse_Click(object sender, RoutedEventArgs e)
     {
-        // Simple Folder Browser using WinForms (easiest in simple WPF app without extra packages)
-        // Alternatively, use Ookii.Dialogs for a modern one, but we stick to native/simple for now.
-        // For pure WPF .NET Core, we often just use the string or a hacked OpenFileDialog.
-        // Let's use OpenFileDialog with "CheckFileExists = false" hack or just asking user to paste.
-        // BETTER: Use System.Windows.Forms dependency (add-on) OR just a simple hack for now?
-        // Actually, WinUI 3 would use FolderPicker. Since this is WPF, let's use a simple approach:
-        
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            ValidateNames = false,
-            CheckFileExists = false,
-            CheckPathExists = true,
-            FileName = "Select Folder",
-            Filter = "Folders|no.files"
-        };
-        
-        // This is a common hack for folder selection in pure WPF without Ookii
-        // Ideally we'd add the Ookii.Dialogs.Wpf NuGet, but let's try to keep deps low.
-        // User can also just paste "Z:\" or "D:\"
-        
-        // Let's just assume the user knows how to type for now to avoid the confusing "Select Folder" file hack,
-        // unless I add System.Windows.Forms reference.
-        // Wait! The user asked "how can the user select other drives".
-        // The text box supports it directly. I will add a "Common Drives" dropdown or just let them type.
-        
-        // Okay, I will implement a "Smart Drive Selector" popup instead of a broken dialog.
-        // NO, let's just use the FolderBrowserDialog from System.Windows.Forms if available,
-        // or just list drives in a ContextMenu.
-        
-        // Let's try ContextMenu for "BtnBrowse" to show available Drives!
-        var menu = new ContextMenu();
-        foreach (var drive in System.IO.DriveInfo.GetDrives())
-        {
-            if (drive.IsReady)
-            {
-                var item = new MenuItem { Header = $"{drive.Name}  ({drive.VolumeLabel}) - {drive.DriveType}" };
-                item.Click += (s, args) => TxtPath.Text = drive.Name;
-                menu.Items.Add(item);
-            }
-        }
-        BtnBrowse.ContextMenu = menu;
-        BtnBrowse.ContextMenu.IsOpen = true;
-        BtnBrowse.ContextMenu = menu;
-        BtnBrowse.ContextMenu.IsOpen = true;
     }
+    */
 
     private void BtnSettings_Click(object sender, RoutedEventArgs e)
     {
-        // For settings, we might need a store to clear DB? 
-        // Let's pass the first store or null. Settings logic might need refactor to handle multiple stores.
-        // For MVP, just passing FIRST store if any.
         var firstStore = DriveList.FirstOrDefault()?.Store;
-        var settingsWin = new SettingsWindow(_config, firstStore);
-        settingsWin.Owner = this;
-        if (settingsWin.ShowDialog() == true)
-        {
-             // TODO: Update Config Service in stores if needed, but they ref same object
-             RefreshList(); // Refresh in case settings changed
-        }
+        
+        // Initialize view
+        SettingsScreen.Initialize(_config, firstStore, _timestampService!);
+
+        // Switch View
+        MainGalleryView.Visibility = Visibility.Collapsed;
+        SettingsScreen.Visibility = Visibility.Visible;
     }
 
     private void CboSort_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -359,13 +329,16 @@ public partial class MainWindow : Window
         try
         {
             TxtStatus.Text = "Opening Transcript View...";
-            await _transcriber.InitializeAsync(); // Ensure loaded
+            await _transcriber!.InitializeAsync(); // Ensure loaded
     
             // Switch to Transcript View
             MainGalleryView.Visibility = Visibility.Collapsed;
             TranscriptScreen.Visibility = Visibility.Visible;
             
-            TranscriptScreen.LoadFile(selected, _transcriber);
+            TranscriptScreen.LoadFile(selected, _transcriber, async () => 
+            {
+                foreach(var d in DriveList) await d.Store.SaveAsync();
+            });
             
             TxtStatus.Text = "Ready.";
         }
@@ -384,13 +357,30 @@ public partial class MainWindow : Window
         TxtStatus.Text = "Initializing Face Service...";
         await faceService.InitializeAsync();
         
-        var files = _stores.Values.SelectMany(s => s.GetAll()).ToList();
-        foreach(var file in files)
+        // Prioritize Selected File
+        var targetFiles = new List<Models.MediaFile>();
+        if (LstFiles.SelectedItem is Models.MediaFile selectedFile)
         {
-             if (file.FilePath.EndsWith(".mp4"))
+            targetFiles.Add(selectedFile);
+        }
+        else
+        {
+            targetFiles = _stores.Values.SelectMany(s => s.GetAll()).ToList();
+        }
+
+        foreach(var file in targetFiles)
+        {
+             if (file.FilePath.EndsWith(".mp4") || file.FilePath.EndsWith(".mkv") || file.FilePath.EndsWith(".mov"))
              {
                  Dispatcher.Invoke(() => TxtStatus.Text = $"Finding faces in {file.FileName}...");
-                 await faceService.ProcessVideoForFacesAsync(file);
+                 try
+                 {
+                    await faceService.ProcessVideoForFacesAsync(file);
+                 }
+                 catch (Exception ex)
+                 {
+                    System.Diagnostics.Debug.WriteLine($"Error processing {file.FileName}: {ex.Message}");
+                 }
              }
         }
         
@@ -409,8 +399,8 @@ public partial class MainWindow : Window
         }
 
         // Initialize scanner with shared services
-        await _transcriber.InitializeAsync();
-        await _voiceService.InitializeAsync();
+        await _transcriber!.InitializeAsync();
+        await _voiceService!.InitializeAsync();
         var scanner = new MyFinder.Services.VoiceScanningService(_transcriber, _voiceService);
         
         var win = new VoiceAnalysisWindow(selected, scanner);
@@ -475,7 +465,7 @@ public partial class MainWindow : Window
         try 
         {
             // Update Last Opened
-            MyFinder.Models.MediaFile file = null;
+            MyFinder.Models.MediaFile? file = null;
             foreach(var d in DriveList) {
                 file = d.Store.GetByPath(path);
                 if (file != null) {
@@ -498,7 +488,7 @@ public partial class MainWindow : Window
     {
         // Use shared service
         TxtStatus.Text = "Using Shared OCR Service...";
-        await _timestampService.InitializeAsync();
+        await _timestampService!.InitializeAsync();
         
         var allFiles = DriveList.SelectMany(d => d.Store.GetAll()).ToList();
         foreach(var file in allFiles)

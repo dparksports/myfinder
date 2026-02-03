@@ -36,11 +36,23 @@ public class MediaFile
     }
     public List<string> PersonNames { get; set; } = new();
     public string? TranscriptSnippet { get; set; } // Short preview
+    public string? TranscriptText { get; set; } // Full transcript JSON or Text
     
     // New Features
     public List<string> Tags { get; set; } = new();
     public DateTime? LastOpened { get; set; }
 
+    // Multi-Transcript Support
+    public List<TranscriptEntry> Transcripts { get; set; } = new();
+    
     // Path to separate file containing full embeddings/transcript if needed
     public string? ExternalDataPath { get; set; }
+}
+
+public class TranscriptEntry
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Model { get; set; } = "Unknown"; // "base", "small"
+    public DateTime Created { get; set; } = DateTime.Now;
+    public string JsonContent { get; set; } = string.Empty;
 }

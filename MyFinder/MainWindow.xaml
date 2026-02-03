@@ -215,7 +215,7 @@
             <!-- Top Bar -->
             <Border Grid.Row="0" Background="#1E1E1E" BorderBrush="#333" BorderThickness="0,0,0,1" Padding="20,0">
                 <DockPanel VerticalAlignment="Center">
-                    <Button Name="BtnBrowse" Content="..." Width="40" Height="35" DockPanel.Dock="Right" Click="BtnBrowse_Click" Background="#333" Margin="10,0,0,0"/>
+
                     <TextBox Name="TxtPath" Text="C:\" Height="35" VerticalContentAlignment="Center" Background="#2D2D30" Foreground="White" BorderThickness="0" Padding="10,0" FontSize="14" ToolTip="Enter path or click '...' to browse"/>
                     
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" Margin="0,0,20,0">
@@ -271,6 +271,9 @@
                 
                 <!-- Transcript View (Hidden by Default) -->
                 <v:TranscriptView x:Name="TranscriptScreen" Visibility="Collapsed"/>
+
+                <!-- Settings View (Hidden by Default) -->
+                <v:SettingsView x:Name="SettingsScreen" Visibility="Collapsed"/>
             </Grid>
 
             <!-- Status Bar -->

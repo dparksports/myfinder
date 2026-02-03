@@ -39,7 +39,7 @@ public class VoiceScanningService
             // If wavPath is passed, it uses it if exists, or extracts to it.
             // Perfect.
             
-            var segments = await _transcriber.TranscribeAsync(file, tempWav);
+            var segments = await _transcriber.TranscribeAsync(file, wavPath: tempWav);
             
             if (segments.Count == 0) return clusters;
 

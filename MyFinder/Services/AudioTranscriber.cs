@@ -12,12 +12,14 @@ namespace MyFinder.Services;
 public class AudioTranscriber
 {
     private readonly string _modelPath;
+    private readonly GgmlType _modelType;
     private WhisperFactory? _factory;
     private WhisperProcessor? _processor;
 
-    public AudioTranscriber(string modelPath)
+    public AudioTranscriber(string modelPath, GgmlType modelType = GgmlType.Base)
     {
         _modelPath = modelPath;
+        _modelType = modelType;
     }
 
     public async Task InitializeAsync()
@@ -30,9 +32,7 @@ public class AudioTranscriber
             {
                 if (!File.Exists(_modelPath) || new FileInfo(_modelPath).Length == 0)
                 {
-                    // Update for Whisper.net 1.5+: Downloader is instance-based
-                    // Update for Whisper.net 1.5+: Downloader is static
-                    using var modelStream = await WhisperGgmlDownloader.GetGgmlModelAsync(GgmlType.Base);
+                    using var modelStream = await WhisperGgmlDownloader.GetGgmlModelAsync(_modelType);
                     using var fileWriter = File.OpenWrite(_modelPath);
                     await modelStream.CopyToAsync(fileWriter);
                 }
@@ -44,18 +44,39 @@ public class AudioTranscriber
             }
             catch (Exception ex)
             {
-                 // Log or rethrow to be caught by UI
-                 // Clean up partial file
                  if (File.Exists(_modelPath) && new FileInfo(_modelPath).Length == 0) File.Delete(_modelPath);
                  throw new Exception($"Failed to initialize Whisper: {ex.Message}", ex);
             }
         });
     }
 
-    public async Task<List<TranscriptionSegment>> TranscribeAsync(MediaFile file, string wavPath = null)
+    public async Task<List<TranscriptionSegment>> TranscribeAsync(MediaFile file, bool force = false, string? wavPath = null)
     {
+        // 0. Migration & Persistence Check
+        if (!string.IsNullOrEmpty(file.TranscriptText) && file.Transcripts.Count == 0)
+        {
+             // Migrate legacy
+             file.Transcripts.Add(new TranscriptEntry 
+             {
+                 Model = "Legacy",
+                 Created = DateTime.MinValue, // Mark as old
+                 JsonContent = file.TranscriptText
+             });
+        }
+
+        if (!force && file.Transcripts.Count > 0)
+        {
+            try 
+            {
+                var latest = file.Transcripts.OrderByDescending(t => t.Created).First();
+                var cached = System.Text.Json.JsonSerializer.Deserialize<List<TranscriptionSegment>>(latest.JsonContent);
+                if (cached != null) return cached;
+            }
+            catch { /* Ignore parse error */ }
+        }
+
         var segments = new List<TranscriptionSegment>();
-        if (_factory == null) return segments;
+        if (_factory == null || _processor == null) return segments;
 
         // 1. Extract Audio if not provided
         string tempWav = wavPath ?? Path.ChangeExtension(Path.GetTempFileName(), ".wav");
@@ -76,6 +97,23 @@ public class AudioTranscriber
                        Text = segment.Text
                    });
                 }
+
+                // Save to file (Multi-transcript)
+                var json = System.Text.Json.JsonSerializer.Serialize(segments);
+                
+                file.Transcripts.Add(new TranscriptEntry 
+                {
+                    Model = _modelType.ToString(),
+                    Created = DateTime.Now,
+                    JsonContent = json
+                });
+                
+                // Sync legacy field
+                file.TranscriptText = json;
+                
+                // Update snippet
+                if (segments.Any())
+                    file.TranscriptSnippet = segments.First().Text;
             }
         }
         catch (Exception ex)

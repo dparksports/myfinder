@@ -12,12 +12,12 @@ namespace MyFinder.Views;
 
 public partial class TranscriptView : UserControl
 {
-    private MediaFile _file;
-    private AudioTranscriber _transcriber;
+    private MediaFile? _file;
+    private AudioTranscriber? _transcriber;
     private DispatcherTimer _timer;
     private bool _isDraggingSlider;
 
-    public event EventHandler BackRequested;
+    public event EventHandler? BackRequested;
 
     public TranscriptView()
     {
@@ -28,32 +28,50 @@ public partial class TranscriptView : UserControl
         _timer.Tick += Timer_Tick;
     }
 
-    public async void LoadFile(MediaFile file, AudioTranscriber transcriber)
+    private Action? _saveCallback;
+
+    public async void LoadFile(MediaFile file, AudioTranscriber transcriber, Action saveCallback)
     {
         _file = file;
         _transcriber = transcriber;
+        _saveCallback = saveCallback;
         
         TxtFileName.Text = file.FileName;
         MediaPlayer.Source = new Uri(file.FilePath);
         MediaPlayer.Play();
         _timer.Start();
 
-        // Check if we need to transcribe
-        // We don't store segments in MediaFile yet (only snippet), so we might need to re-transcribe or assume snippet implies done?
-        // Actually, we want the FULL segments.
-        // Let's re-run transcribe if we don't have cached segments (we don't persist segments in JSON currently).
-        // Improving: We should cache segments in JSON or sidecar file.
-        // For now, we will re-transcribe if needed, or if we just have snippet. 
-        // NOTE: Transcribing again is slow. Ideally we save it. 
-        // But for this task, let's just run it.
-        
+        if (_file.Transcripts.Count > 0)
+        {
+             LoadVersions();
+        }
+        else
+        {
+             await RunTranscription(false);
+        }
+    }
+
+    private async System.Threading.Tasks.Task RunTranscription(bool force)
+    {
+        if (_transcriber == null || _file == null) return;
+
         LoadingOverlay.Visibility = Visibility.Visible;
         try 
         {
-            // If we have a way to check if already done...
-            // For now, simple re-run.
-            var segments = await _transcriber.TranscribeAsync(file);
+            var segments = await _transcriber!.TranscribeAsync(_file!, force: force);
             LstTranscript.ItemsSource = segments;
+            
+            // If new transcription happened (force or first time), save logic is handled by Transcriber updating MediaFile,
+            // but we need to trigger Store Save.
+            // Transcriber returns existing if !force and exists.
+            // If we are forcing, we definitely need save. If we are not forcing but it ran (first time), we need save.
+            // Simplified: Always save after transcribe returns, or only if modified?
+            // Since Transcriber updates properties, safe to save.
+            
+            _saveCallback?.Invoke();
+            
+            // Refresh Versions
+            LoadVersions();
         }
         catch (Exception ex)
         {
@@ -65,7 +83,98 @@ public partial class TranscriptView : UserControl
         }
     }
 
-    private void Timer_Tick(object sender, EventArgs e)
+    private void LoadVersions()
+    {
+        if (_file == null) return;
+        
+        var versions = _file.Transcripts.OrderByDescending(t => t.Created).ToList();
+        
+        CboPrimary.ItemsSource = versions;
+        // Default select latest if not selected
+        if (CboPrimary.SelectedItem == null && versions.Any())
+             CboPrimary.SelectedIndex = 0;
+             
+        CboSecondary.ItemsSource = versions;
+        if (CboSecondary.SelectedItem == null && versions.Count > 1)
+             CboSecondary.SelectedIndex = 1; // Default to second latest
+        else if (CboSecondary.SelectedItem == null && versions.Any())
+             CboSecondary.SelectedIndex = 0;
+    }
+
+    private void CboPrimary_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (CboPrimary.SelectedItem is TranscriptEntry entry)
+        {
+             try 
+             {
+                 var segments = System.Text.Json.JsonSerializer.Deserialize<List<AudioTranscriber.TranscriptionSegment>>(entry.JsonContent);
+                 LstTranscript.ItemsSource = segments;
+             }
+             catch { }
+        }
+    }
+    
+    private void CboSecondary_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (CboSecondary.SelectedItem is TranscriptEntry entry)
+        {
+             try 
+             {
+                 var segments = System.Text.Json.JsonSerializer.Deserialize<List<AudioTranscriber.TranscriptionSegment>>(entry.JsonContent);
+                 LstTranscriptSecondary.ItemsSource = segments;
+             }
+             catch { }
+        }
+    }
+
+    private void ChkCompare_Checked(object sender, RoutedEventArgs e)
+    {
+        ColSecondary.Width = new GridLength(1, GridUnitType.Star);
+        CboSecondary.Visibility = Visibility.Visible;
+        LstTranscriptSecondary.Visibility = Visibility.Visible;
+    }
+
+    private void ChkCompare_Unchecked(object sender, RoutedEventArgs e)
+    {
+        ColSecondary.Width = new GridLength(0);
+        CboSecondary.Visibility = Visibility.Hidden;
+        LstTranscriptSecondary.Visibility = Visibility.Hidden;
+    }
+
+    private void BtnDelete_Click(object sender, RoutedEventArgs e)
+    {
+        if (_file == null || CboPrimary.SelectedItem is not TranscriptEntry entry) return;
+        
+        var result = MessageBox.Show($"Delete transcript version '{entry.Model}' from {entry.Created}?", "Confirm Delete", MessageBoxButton.YesNo);
+        if (result == MessageBoxResult.Yes)
+        {
+             _file.Transcripts.Remove(entry);
+             _saveCallback?.Invoke();
+             LoadVersions();
+        }
+    }
+
+    private void LstTranscriptSecondary_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (LstTranscriptSecondary.SelectedItem is AudioTranscriber.TranscriptionSegment seg)
+        {
+             MediaPlayer.Position = seg.Start;
+             MediaPlayer.Play();
+             BtnPlayPause.Content = "⏸";
+             _timer.Start();
+        }
+    }
+
+    private async void BtnRetranscribe_Click(object sender, RoutedEventArgs e)
+    {
+        var result = MessageBox.Show("Start new transcription? This will create a new version.", "Confirm", MessageBoxButton.YesNo);
+        if (result == MessageBoxResult.Yes)
+        {
+             await RunTranscription(true);
+        }
+    }
+
+    private void Timer_Tick(object? sender, EventArgs e)
     {
         if (!_isDraggingSlider && MediaPlayer.NaturalDuration.HasTimeSpan)
         {

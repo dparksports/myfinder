@@ -17,6 +17,7 @@ public class ConfigService
     public bool DetectPersons { get; set; } = true;
     public bool DetectVehicles { get; set; } = true;
     public bool DetectAnimals { get; set; } = true;
+    public string WhisperModel { get; set; } = "Base";
 
     public ConfigService(string appDataPath)
     {
@@ -39,6 +40,9 @@ public class ConfigService
                 DetectPersons = settings.DetectPersons;
                 DetectVehicles = settings.DetectVehicles;
                 DetectAnimals = settings.DetectAnimals;
+                
+                if (!string.IsNullOrEmpty(settings.WhisperModel))
+                    WhisperModel = settings.WhisperModel;
             }
         }
         catch (JsonException)

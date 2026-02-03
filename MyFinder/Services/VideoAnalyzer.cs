@@ -86,6 +86,8 @@ public class VideoAnalyzer
 
     private bool HasInterestingContent(Mat frame)
     {
+        if (_session == null) return false;
+        
         // YOLO Preprocessing: Resize to 640x640, Normalize
         using var blob = CvDnn.BlobFromImage(frame, 1.0 / 255.0, new OpenCvSharp.Size(640, 640), new Scalar(0, 0, 0), true, false);
         
