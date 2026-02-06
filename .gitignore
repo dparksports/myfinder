@@ -5,3 +5,5 @@ publish/
 *.user
 .vs/
 *.pdb
+
+*.dll
