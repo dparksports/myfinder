@@ -13,16 +13,16 @@ MyFinder is a modern, high-performance video file explorer designed for content 
 *   **📝 Integrated Transcription**: Transcribe audio tracks locally and jump to specific spoken phrases.
 *   **🔒 Privacy First**: All analysis happens on your device. No data leaves your machine.
 
-## New in v1.1.0
+## New in v1.2.0
 
-*   **Debugging Tools**: New diagnostics for Face Detection, Voice ID, and Timestamps.
-*   **Window Persistence**: MyFinder now remembers your window size and position.
-*   **Improved Timestamp Extraction**: Better support for 4K video and raw text fallback.
-*   **Model Selection**: Choose specific Whisper models for transcription.
+*   **GA4 Analytics**: Integrated session management and engagement tracking.
+*   **Premium App Icon**: New modern visual identity.
+*   **Session Management**: 30-minute timeout for accurate user tracking.
+*   **Engagement Tracking**: Events now include duration data for better reporting.
 
 ## Download
 
-[**Download Latest Release (v1.1.0)**](https://github.com/dparksports/myfinder/releases/download/v1.1.0/MyFinder_v1.1.0.zip)
+[**Download Latest Release (v1.2.0)**](https://github.com/dparksports/myfinder/releases/download/v1.2.0/MyFinder_v1.2.0.zip)
 
 ## Installation
 
